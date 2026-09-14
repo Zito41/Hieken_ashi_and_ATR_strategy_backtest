@@ -19,8 +19,9 @@ def run():
     config = be.StrategyConfig(
         atr_stop_multiplier=1.5,
         atr_spike_threshold=1.10,
-        trim_price_distance=5.00,
+        trim_price_distance=2.00,
         trim_size_factor=0.5,
+        velocity_spike_multiplier=2.5,
     )
 
     # 3. Execute Strategy Backtest

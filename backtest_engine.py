@@ -8,8 +8,10 @@ import pandas as pd
 class StrategyConfig:
     atr_stop_multiplier: float = 1.5
     atr_spike_threshold: float = 1.10
-    trim_price_distance: float = 5.00
+    trim_price_distance: float = 2.00
     trim_size_factor: float = 0.5
+    velocity_spike_multiplier: float = 2.5
+    lookahead_bars: int = 16
 
 
 def run_backtest(
@@ -39,8 +41,10 @@ def run_backtest(
 
     entry_price = 0.0
     entry_time = None
+    entry_idx = 0
     initial_sl = 0.0
     stop_loss = 0.0
+    initial_atr = 0.0
     position_size = 1.0
     trimmed_this_trade = False
     trim_price = np.nan
@@ -49,7 +53,12 @@ def run_backtest(
     for i in range(1, n):
         # PHASE 1: ENTRY LOGIC
         if not in_trade:
-            volatility_gate = (atr[i] > atr_sma[i]) and (atr[i - 1] <= atr_sma[i - 1])
+            # Volatility Gate: ATR rising above 20-SMA baseline & not over-extended (>1.5x SMA)
+            volatility_gate = (
+                (atr[i] > atr_sma[i])
+                and (atr[i] > atr[i - 1])
+                and (atr[i] <= 1.5 * atr_sma[i])
+            )
 
             if is_long:
                 signal_candle = (
@@ -68,6 +77,8 @@ def run_backtest(
                 in_trade = True
                 entry_price = close[i]
                 entry_time = timestamps[i]
+                entry_idx = i
+                initial_atr = atr[i]
                 initial_sl = (
                     entry_price - cfg.atr_stop_multiplier * atr[i]
                     if is_long
@@ -86,7 +97,7 @@ def run_backtest(
             )
             price_distance = abs(close[i] - entry_price)
 
-            # Directional Trimming
+            # Directional Trimming Safety Valve
             atr_spike = atr[i] > (atr[i - 1] * cfg.atr_spike_threshold)
             if atr_spike and not trimmed_this_trade:  # noqa: SIM102
                 if floating_pnl < 0 and price_distance < cfg.trim_price_distance:
@@ -95,7 +106,7 @@ def run_backtest(
                     position_size *= cfg.trim_size_factor
                     trimmed_this_trade = True
 
-            # Trailing Stop Ratchet
+            # One-Way Ratchet Trailing Stop
             if is_long:
                 new_potential_sl = high[i] - cfg.atr_stop_multiplier * atr[i]
                 stop_loss = max(stop_loss, new_potential_sl)
@@ -116,6 +127,7 @@ def run_backtest(
             if hit_sl or loss_of_momentum or opposing_wick:
                 exit_price = stop_loss if hit_sl else close[i]
                 exit_time = timestamps[i]
+                exit_idx = i
 
                 if trimmed_this_trade:
                     realized_trim = (
@@ -143,9 +155,12 @@ def run_backtest(
                     {
                         "Direction": "LONG" if is_long else "SHORT",
                         "Entry Time": entry_time,
+                        "Entry Index": entry_idx,
                         "Entry": entry_price,
+                        "Initial ATR": initial_atr,
                         "Initial SL": initial_sl,
                         "Exit Time": exit_time,
+                        "Exit Index": exit_idx,
                         "Exit": exit_price,
                         "Trimmed": trimmed_this_trade,
                         "Trim Price": trim_price,
@@ -159,7 +174,59 @@ def run_backtest(
                 )
                 in_trade = False
 
-    return pd.DataFrame(trade_log)
+    trade_df = pd.DataFrame(trade_log)
+
+    # PHASE 4: ANALYTICS & WHIPSAW CATEGORIZATION
+    if not trade_df.empty:
+        classifications = []
+        for _, trade in trade_df.iterrows():
+            pnl = trade["PnL"]
+            exit_reason = trade["Exit Reason"]
+            ex_idx = int(trade["Exit Index"])
+            tr_direction = trade["Direction"]
+            en_price = trade["Entry"]
+            tr_atr = trade["Initial ATR"]
+
+            if pnl > 0 and exit_reason != "Stop Loss":
+                classifications.append("CLEAN_WIN")
+            else:
+                # Target price for whipsaw evaluation (1.5 x ATR move from entry)
+                target_tp = (
+                    en_price + (cfg.atr_stop_multiplier * tr_atr)
+                    if tr_direction == "LONG"
+                    else en_price - (cfg.atr_stop_multiplier * tr_atr)
+                )
+
+                lookahead_end = min(ex_idx + cfg.lookahead_bars + 1, n)
+                future_highs = high[ex_idx:lookahead_end]
+                future_lows = low[ex_idx:lookahead_end]
+
+                if tr_direction == "LONG":
+                    hit_tp = np.any(future_highs >= target_tp)
+                else:
+                    hit_tp = np.any(future_lows <= target_tp)
+
+                # Velocity across 1-2 candle window around stop-out
+                window_start = max(0, ex_idx - 1)
+                candle_range = np.max(
+                    high[window_start : ex_idx + 1] - low[window_start : ex_idx + 1]
+                )
+                current_atr = atr[ex_idx]
+                is_high_velocity = candle_range >= (
+                    cfg.velocity_spike_multiplier * current_atr
+                )
+
+                if hit_tp:
+                    if is_high_velocity:
+                        classifications.append("FLASH_WHIPSAW")
+                    else:
+                        classifications.append("SLOW_REVERSAL")
+                else:
+                    classifications.append("STANDARD_LOSS")
+
+        trade_df["Classification"] = classifications
+
+    return trade_df
 
 
 def run_directional_backtest(

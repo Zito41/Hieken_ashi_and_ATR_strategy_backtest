@@ -23,15 +23,13 @@ def process_mtf_data_mt5(symbol: str = "XAUUSD", bars_m15: int = 20000) -> pd.Da
     )
     rates_m15 = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_M15, utc_from, utc_to)
 
-    # Fallback to pos count if range fails
     if rates_m15 is None or len(rates_m15) == 0:
         rates_m15 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, bars_m15)
 
     if rates_m15 is None or len(rates_m15) == 0:
         mt5.shutdown()
         raise ValueError(
-            f"Failed to fetch M15 data for {symbol}. Ensure symbol is active in MT5"
-            " Market Watch."
+            f"Failed to fetch M15 data for {symbol}. Ensure symbol is active in MT5 Market Watch."
         )
 
     df_m15 = pd.DataFrame(rates_m15)
@@ -65,12 +63,12 @@ def process_mtf_data_mt5(symbol: str = "XAUUSD", bars_m15: int = 20000) -> pd.Da
 
     mt5.shutdown()
 
-    # 3. Indicator Preparation
+    # 3. Indicator Preparation (20-SMA baseline for ATR)
     df_h1 = ind.prep_data(df_h1, atr_period=14, atr_baseline_period=20)
     df_h1["h1_bias"] = np.where(df_h1["HA_Close"] >= df_h1["HA_Open"], 1, -1)
     df_h1["h1_bias_completed"] = df_h1["h1_bias"].shift(1)
 
-    df_m15 = ind.prep_data(df_m15, atr_period=14, atr_baseline_period=64)
+    df_m15 = ind.prep_data(df_m15, atr_period=14, atr_baseline_period=20)
 
     # 4. Merge H1 Bias
     print("Merging MTF Data...")

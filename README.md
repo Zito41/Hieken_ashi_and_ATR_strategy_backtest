@@ -1,0 +1,1 @@
+This is an initial test for a trading strategy using Hieken ashi candles and the Average True Range(ATR) indicator, It is still incomplete and I will update it soon, but this is the basic idea and foundation

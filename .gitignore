@@ -1,0 +1,49 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Project output directory (PNG charts & Excel reports)
+output/
+*.xlsx
+*.png
+
+# IDEs and Text Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & MT5 local data dumps
+*.log
+*.csv
+# IDE Workspace Files
+*.code-workspace
+.vscode/
+
+# Uncomment below if you explicitly want to ignore python version pinning
+# .python-version

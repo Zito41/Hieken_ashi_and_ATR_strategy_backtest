@@ -620,3 +620,309 @@ def generate_all_outputs(
     plot_price_charts(df_mtf, long_trades, short_trades, output_dir)
     generate_prop_analytics_card(long_trades, short_trades, output_dir)
     print("All strategy outputs successfully exported!\n")
+
+
+def render_analytics_card(
+    long_trades: pd.DataFrame,
+    short_trades: pd.DataFrame,
+    title_subtext: str,
+    filename: str,
+):
+    """Renders a standalone visual KPI card for any given set of long and short trades."""
+    combined_trades = (
+        pd.concat([long_trades, short_trades]).sort_index()
+        if not (long_trades.empty and short_trades.empty)
+        else pd.DataFrame()
+    )
+
+    c_stats = calculate_advanced_metrics(combined_trades)
+    l_stats = calculate_advanced_metrics(long_trades)
+    s_stats = calculate_advanced_metrics(short_trades)
+
+    fig = plt.figure(figsize=(12, 8), facecolor="#0d1117")
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("#0d1117")
+    ax.axis("off")
+
+    ax.text(
+        0.04,
+        0.92,
+        "XAUUSD HA/ATR QUANT DASHBOARD",
+        fontsize=22,
+        fontweight="bold",
+        color="#ffffff",
+    )
+    ax.text(0.04, 0.87, title_subtext, fontsize=11, color="#8b949e")
+
+    def add_kpi(ax, x, y, w, h, title, value, subtext="", text_color="#3fb950"):
+        box = FancyBboxPatch(
+            (x, y),
+            w,
+            h,
+            boxstyle="round,pad=0.01,rounding_size=0.02",
+            facecolor="#161b22",
+            edgecolor="#30363d",
+            mutation_scale=1,
+        )
+        ax.add_patch(box)
+        ax.text(
+            x + w * 0.5,
+            y + h * 0.72,
+            title,
+            fontsize=9,
+            color="#8b949e",
+            ha="center",
+            va="center",
+            fontweight="bold",
+        )
+        ax.text(
+            x + w * 0.5,
+            y + h * 0.42,
+            value,
+            fontsize=18,
+            color=text_color,
+            ha="center",
+            va="center",
+            fontweight="bold",
+        )
+        if subtext:
+            ax.text(
+                x + w * 0.5,
+                y + h * 0.18,
+                subtext,
+                fontsize=8,
+                color="#6e7681",
+                ha="center",
+                va="center",
+            )
+
+    add_kpi(
+        ax,
+        0.04,
+        0.62,
+        0.28,
+        0.20,
+        "NET PROFIT",
+        f"${c_stats['Total Net PnL ($)']:.2f}",
+        f"+${c_stats['Gross Profit ($)']:.2f} Profit /"
+        f" -${c_stats['Gross Loss ($)']:.2f} Loss",
+        "#58a6ff",
+    )
+    add_kpi(
+        ax,
+        0.36,
+        0.62,
+        0.28,
+        0.20,
+        "WIN RATE",
+        f"{c_stats['Win Rate (%)']}%",
+        f"{len(combined_trades[combined_trades['PnL'] > 0])} Wins /"
+        f" {len(combined_trades[combined_trades['PnL'] < 0])} Losses",
+        "#3fb950",
+    )
+    add_kpi(
+        ax,
+        0.68,
+        0.62,
+        0.28,
+        0.20,
+        "PROFIT FACTOR",
+        f"{c_stats['Profit Factor']}",
+        "High Expectancy Model",
+        "#58a6ff",
+    )
+
+    add_kpi(
+        ax,
+        0.04,
+        0.38,
+        0.28,
+        0.20,
+        "TOTAL TRADES",
+        f"{c_stats['Total Trades']}",
+        f"{l_stats['Total Trades']} Long / {s_stats['Total Trades']} Short",
+        "#f0f6fc",
+    )
+    add_kpi(
+        ax,
+        0.36,
+        0.38,
+        0.28,
+        0.20,
+        "AVG TRADE PnL",
+        f"${c_stats['Avg Trade PnL ($)']:.2f}",
+        f"Expectancy: ${c_stats['Expectancy ($)']:.2f}",
+        "#3fb950",
+    )
+    add_kpi(
+        ax,
+        0.68,
+        0.38,
+        0.28,
+        0.20,
+        "MAX DRAWDOWN",
+        f"${c_stats['Max Drawdown ($)']:.2f}",
+        "Controlled Equity Dip",
+        "#f85149",
+    )
+
+    box_detail = FancyBboxPatch(
+        (0.04, 0.06),
+        0.92,
+        0.26,
+        boxstyle="round,pad=0.01,rounding_size=0.02",
+        facecolor="#161b22",
+        edgecolor="#30363d",
+        mutation_scale=1,
+    )
+    ax.add_patch(box_detail)
+
+    ax.text(
+        0.07,
+        0.27,
+        "DIRECTIONAL BREAKDOWN",
+        fontsize=11,
+        color="#ffffff",
+        fontweight="bold",
+    )
+    headers = ["Metric", "Long Position", "Short Position", "Overall Combined"]
+    x_cols = [0.07, 0.32, 0.57, 0.82]
+
+    for x, h in zip(x_cols, headers):
+        ax.text(x, 0.22, h, fontsize=10, color="#8b949e", fontweight="bold")
+
+    rows = [
+        (
+            "Trades & Win Rate",
+            f"{l_stats['Total Trades']} Trades ({l_stats['Win Rate (%)']}% Win)",
+            f"{s_stats['Total Trades']} Trades ({s_stats['Win Rate (%)']}% Win)",
+            f"{c_stats['Total Trades']} Trades ({c_stats['Win Rate (%)']}% Win)",
+        ),
+        (
+            "Net Profit / Factor",
+            (
+                f"${l_stats['Total Net PnL ($)']:.2f} PnL (PF:"
+                f" {l_stats['Profit Factor']})"
+            ),
+            (
+                f"${s_stats['Total Net PnL ($)']:.2f} PnL (PF:"
+                f" {s_stats['Profit Factor']})"
+            ),
+            (
+                f"${c_stats['Total Net PnL ($)']:.2f} PnL (PF:"
+                f" {c_stats['Profit Factor']})"
+            ),
+        ),
+        (
+            "Max Drawdown",
+            f"${l_stats['Max Drawdown ($)']:.2f} DD",
+            f"${s_stats['Max Drawdown ($)']:.2f} DD",
+            f"${c_stats['Max Drawdown ($)']:.2f} DD",
+        ),
+    ]
+
+    y_pos = 0.17
+    for r in rows:
+        ax.text(x_cols[0], y_pos, r[0], fontsize=9, color="#c9d1d9")
+        ax.text(
+            x_cols[1],
+            y_pos,
+            r[1],
+            fontsize=9,
+            color="#3fb950" if "PnL" in r[1] or "Win" in r[1] else "#c9d1d9",
+        )
+        ax.text(
+            x_cols[2],
+            y_pos,
+            r[2],
+            fontsize=9,
+            color="#3fb950" if "PnL" in r[2] or "Win" in r[2] else "#c9d1d9",
+        )
+        ax.text(
+            x_cols[3],
+            y_pos,
+            r[3],
+            fontsize=9,
+            color="#58a6ff" if "PnL" in r[3] else "#c9d1d9",
+        )
+        y_pos -= 0.045
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def generate_prop_analytics_cards(
+    long_trades: pd.DataFrame, short_trades: pd.DataFrame, output_dir: str
+):
+    """Generates an overall combined analytics card and separate monthly analytics cards."""
+    # 1. Overall Total Backtest Graphical Card
+    overall_card_path = os.path.join(output_dir, "prop_analytics_card_OVERALL.png")
+    render_analytics_card(
+        long_trades,
+        short_trades,
+        "Overall Backtest Performance Summary | M15 Execution + H1 MTF Bias",
+        overall_card_path,
+    )
+    print(f"Overall Prop Analytics Card saved to '{overall_card_path}'")
+
+    # 2. Extract Unique Months to Generate Graphical Cards for Each Month
+    combined = (
+        pd.concat([long_trades, short_trades]).sort_index()
+        if not (long_trades.empty and short_trades.empty)
+        else pd.DataFrame()
+    )
+    if combined.empty or "Entry Time" not in combined.columns:
+        return
+
+    monthly_charts_dir = os.path.join(output_dir, "monthly_charts")
+    os.makedirs(monthly_charts_dir, exist_ok=True)
+
+    combined["Month"] = (
+        pd.to_datetime(combined["Entry Time"]).dt.to_period("M").astype(str)
+    )
+    months = sorted(combined["Month"].unique())
+
+    print(f"Generating {len(months)} monthly graphical analytics cards...")
+    for month_str in months:
+        l_month = (
+            long_trades[
+                pd.to_datetime(long_trades["Entry Time"]).dt.to_period("M").astype(str)
+                == month_str
+            ]
+            if not long_trades.empty
+            else pd.DataFrame()
+        )
+        s_month = (
+            short_trades[
+                pd.to_datetime(short_trades["Entry Time"]).dt.to_period("M").astype(str)
+                == month_str
+            ]
+            if not short_trades.empty
+            else pd.DataFrame()
+        )
+
+        card_path = os.path.join(monthly_charts_dir, f"analytics_card_{month_str}.png")
+        render_analytics_card(
+            l_month,
+            s_month,
+            f"Monthly Performance Summary ({month_str}) | M15 Execution + H1 MTF Bias",
+            card_path,
+        )
+
+    print(f"All monthly graphical analytics cards saved to '{monthly_charts_dir}/'!\n")
+
+
+def generate_all_outputs(  # noqa: F811
+    long_trades: pd.DataFrame,
+    short_trades: pd.DataFrame,
+    df_mtf: pd.DataFrame,
+    output_dir: str,
+):
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"\nGenerating Strategy Outputs in '{output_dir}/'...")
+
+    export_excel_report(long_trades, short_trades, output_dir)
+    plot_price_charts(df_mtf, long_trades, short_trades, output_dir)
+    generate_prop_analytics_cards(long_trades, short_trades, output_dir)
+    print("All strategy outputs successfully exported!\n")
